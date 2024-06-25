@@ -1,8 +1,7 @@
 import React, { useState, useCallback } from "react";
-import ReactDOM from "react-dom";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 
-function App() {
+export default function App() {
   const getItems = (count) =>
     Array.from({ length: count }, (v, k) => k).map((k) => ({
       id: `item-${k}`,
@@ -84,5 +83,3 @@ const getListStyle = (isDraggingOver) => ({
   padding: GRID,
   width: 250,
 });
-
-ReactDOM.render(<App />, document.getElementById("root"));
