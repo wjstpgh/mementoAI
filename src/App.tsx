@@ -1,44 +1,46 @@
-import { useState, useCallback, CSSProperties, useEffect } from "react";
+import { useState, useCallback } from "react";
 import {
   DragDropContext,
   Droppable,
   Draggable,
   OnDragEndResponder,
-  NotDraggingStyle,
-  DraggingStyle,
   OnDragUpdateResponder,
 } from "react-beautiful-dnd";
 
-import { getColumnsItems, isEven } from "./util/dragItems";
-
-export interface DragItem {
-  id: string;
-  content: string;
-}
-
-const RESTRICT_TYPE_MSG = {
-  COLUMN: "첫 번째 칼럼에서 세 번째 칼럼으로는 아이템 이동이 불가능합니다.",
-  EVEN: "짝수 아이템은 다른 짝수 아이템 앞으로 이동할 수 없습니다.",
-};
-
-const DEFUALT_RESTRICT_STATE = { isInvalid: false, typeMsg: "" };
+import {
+  add,
+  getColumnsItems,
+  getDragAndDropEventValues,
+  isEven,
+  remove,
+} from "./util/dragNDrop";
+import { DragItem } from "./type";
+import { DEFUALT_RESTRICT_STATE, RESTRICT_TYPE_MSG } from "./constant";
+import { getItemStyle, getListStyle } from "./dynamicStyle";
 
 export default function App() {
   const [columns, setColumns] = useState<Record<string, DragItem[]>>(
-    getColumnsItems(4, 10)
+    getColumnsItems(4, 10),
   );
   const [restricted, setRestricted] = useState(DEFUALT_RESTRICT_STATE);
+  const [selectedItems, setSelectedItems] = useState<Set<DragItem>>(new Set());
+  const [selectedColumn, setSelectedColumn] = useState("");
 
-  const remove = (list: DragItem[], startIndex: number) => {
-    const newList = Array.from(list);
-    const [removed] = newList.splice(startIndex, 1);
-    return { newList, removed };
-  };
+  const handleSelect = (item: DragItem, column: string) => {
+    if (selectedColumn !== column) {
+      setSelectedColumn(column);
+      setSelectedItems(new Set());
+    }
 
-  const add = (list: DragItem[], endIndex: number, removed: DragItem) => {
-    const newList = Array.from(list);
-    newList.splice(endIndex, 0, removed);
-    return newList;
+    setSelectedItems((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(item)) {
+        newSet.delete(item);
+      } else {
+        newSet.add(item);
+      }
+      return newSet;
+    });
   };
 
   const onDragEnd: OnDragEndResponder = useCallback(
@@ -49,12 +51,12 @@ export default function App() {
         return;
       }
 
-      const isDropSameColumn =
-        result.source.droppableId === result.destination.droppableId;
+      const { isDropSameColumn, movedTarget, isMultiDrag } =
+        getDragAndDropEventValues(result, columns, selectedItems);
 
-      const { newList: newSourceList, removed } = remove(
+      const newSourceList = remove(
         columns[result.source.droppableId],
-        result.source.index
+        movedTarget,
       );
 
       const newDestinationList = add(
@@ -62,7 +64,7 @@ export default function App() {
           ? newSourceList
           : columns[result.destination.droppableId],
         result.destination.index,
-        removed
+        movedTarget,
       );
 
       isDropSameColumn
@@ -75,23 +77,27 @@ export default function App() {
             [result.source.droppableId]: newSourceList,
             [result.destination?.droppableId!]: newDestinationList,
           }));
+
+      isMultiDrag && setSelectedItems(new Set());
     },
-    [columns, restricted]
+    [columns, restricted, selectedItems],
   );
 
   const onDragUpdate: OnDragUpdateResponder = useCallback(
     (update) => {
       if (!update.destination) return;
 
-      const isDropSameColumn =
-        update.source.droppableId === update.destination.droppableId;
+      const { isDropSameColumn, movedTarget } = getDragAndDropEventValues(
+        update,
+        columns,
+        selectedItems,
+      );
 
-      const draggedItem =
-        columns[update.source.droppableId][update.source.index];
+      const draggedLastItem = Array.from(movedTarget)[movedTarget.size - 1];
 
-      const { newList: destinationList } = isDropSameColumn
-        ? remove(columns[update.destination.droppableId], update.source.index)
-        : { newList: columns[update.destination.droppableId] };
+      const destinationList = isDropSameColumn
+        ? remove(columns[update.destination.droppableId], movedTarget)
+        : columns[update.destination.droppableId];
 
       const destinationItem = destinationList[update.destination.index];
 
@@ -103,14 +109,18 @@ export default function App() {
         return;
       }
 
-      if (isEven(draggedItem) && destinationItem && isEven(destinationItem)) {
+      if (
+        isEven(draggedLastItem) &&
+        destinationItem &&
+        isEven(destinationItem)
+      ) {
         setRestricted({ isInvalid: true, typeMsg: RESTRICT_TYPE_MSG.EVEN });
         return;
       }
 
       setRestricted({ isInvalid: false, typeMsg: "" });
     },
-    [columns]
+    [columns, selectedItems],
   );
 
   return (
@@ -148,8 +158,10 @@ export default function App() {
                             style={getItemStyle(
                               snapshot.isDragging,
                               provided.draggableProps.style,
-                              restricted.isInvalid && snapshot.isDragging
+                              restricted.isInvalid && snapshot.isDragging,
+                              selectedItems.has(item),
                             )}
+                            onClick={() => handleSelect(item, column)}
                           >
                             {item.content}
                           </div>
@@ -167,23 +179,3 @@ export default function App() {
     </DragDropContext>
   );
 }
-
-const GRID = 8;
-
-const getItemStyle = (
-  isDragging: boolean,
-  draggableStyle?: DraggingStyle | NotDraggingStyle,
-  isRestricted?: boolean
-): CSSProperties => ({
-  userSelect: "none",
-  padding: GRID * 2,
-  margin: `0 0 ${GRID}px 0`,
-  background: isDragging ? (isRestricted ? "red" : "lightgreen") : "grey",
-  ...draggableStyle,
-});
-
-const getListStyle = (isDraggingOver: boolean) => ({
-  background: isDraggingOver ? "lightblue" : "lightgrey",
-  padding: GRID,
-  width: 250,
-});
