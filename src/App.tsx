@@ -1,4 +1,4 @@
-import { useState, useCallback, CSSProperties } from "react";
+import { useState, useCallback, CSSProperties, useEffect } from "react";
 import {
   DragDropContext,
   Droppable,
@@ -6,19 +6,28 @@ import {
   OnDragEndResponder,
   NotDraggingStyle,
   DraggingStyle,
+  OnDragUpdateResponder,
 } from "react-beautiful-dnd";
 
-import { getColumnsItems } from "./util/dragItems";
+import { getColumnsItems, isEven } from "./util/dragItems";
 
 export interface DragItem {
   id: string;
   content: string;
 }
 
+const RESTRICT_TYPE_MSG = {
+  COLUMN: "첫 번째 칼럼에서 세 번째 칼럼으로는 아이템 이동이 불가능합니다.",
+  EVEN: "짝수 아이템은 다른 짝수 아이템 앞으로 이동할 수 없습니다.",
+};
+
+const DEFUALT_RESTRICT_STATE = { isInvalid: false, typeMsg: "" };
+
 export default function App() {
   const [columns, setColumns] = useState<Record<string, DragItem[]>>(
     getColumnsItems(4, 10)
   );
+  const [restricted, setRestricted] = useState(DEFUALT_RESTRICT_STATE);
 
   const remove = (list: DragItem[], startIndex: number) => {
     const newList = Array.from(list);
@@ -35,6 +44,10 @@ export default function App() {
   const onDragEnd: OnDragEndResponder = useCallback(
     (result) => {
       if (!result.destination) return;
+      if (restricted.isInvalid) {
+        setRestricted(DEFUALT_RESTRICT_STATE);
+        return;
+      }
 
       const isDropSameColumn =
         result.source.droppableId === result.destination.droppableId;
@@ -63,12 +76,51 @@ export default function App() {
             [result.destination?.droppableId!]: newDestinationList,
           }));
     },
+    [columns, restricted]
+  );
+
+  const onDragUpdate: OnDragUpdateResponder = useCallback(
+    (update) => {
+      if (!update.destination) return;
+
+      const isDropSameColumn =
+        update.source.droppableId === update.destination.droppableId;
+
+      const draggedItem =
+        columns[update.source.droppableId][update.source.index];
+
+      const { newList: destinationList } = isDropSameColumn
+        ? remove(columns[update.destination.droppableId], update.source.index)
+        : { newList: columns[update.destination.droppableId] };
+
+      const destinationItem = destinationList[update.destination.index];
+
+      if (
+        update.source.droppableId === "column1" &&
+        update.destination.droppableId === "column3"
+      ) {
+        setRestricted({ isInvalid: true, typeMsg: RESTRICT_TYPE_MSG.COLUMN });
+        return;
+      }
+
+      if (isEven(draggedItem) && destinationItem && isEven(destinationItem)) {
+        setRestricted({ isInvalid: true, typeMsg: RESTRICT_TYPE_MSG.EVEN });
+        return;
+      }
+
+      setRestricted({ isInvalid: false, typeMsg: "" });
+    },
     [columns]
   );
 
   return (
-    <DragDropContext onDragEnd={onDragEnd}>
-      <div className="flex justify-center items-center w-[100vw] min-h-[100vh] overflow-x-hidden">
+    <DragDropContext onDragEnd={onDragEnd} onDragUpdate={onDragUpdate}>
+      <div className="relative flex flex-col justify-center items-center w-[100vw] min-h-[100vh] overflow-x-hidden">
+        <div className="fixed top-[100px]">
+          <p className="text-red-500 text-[2rem] font-bold">
+            {restricted.typeMsg}
+          </p>
+        </div>
         <div className="flex justify-center items-baseline gap-x-[20px]">
           {Object.entries(columns).map(([column, items]) => (
             <div key={column}>
@@ -95,7 +147,8 @@ export default function App() {
                             {...provided.dragHandleProps}
                             style={getItemStyle(
                               snapshot.isDragging,
-                              provided.draggableProps.style
+                              provided.draggableProps.style,
+                              restricted.isInvalid && snapshot.isDragging
                             )}
                           >
                             {item.content}
@@ -119,12 +172,13 @@ const GRID = 8;
 
 const getItemStyle = (
   isDragging: boolean,
-  draggableStyle?: DraggingStyle | NotDraggingStyle
+  draggableStyle?: DraggingStyle | NotDraggingStyle,
+  isRestricted?: boolean
 ): CSSProperties => ({
   userSelect: "none",
   padding: GRID * 2,
   margin: `0 0 ${GRID}px 0`,
-  background: isDragging ? "lightgreen" : "grey",
+  background: isDragging ? (isRestricted ? "red" : "lightgreen") : "grey",
   ...draggableStyle,
 });
 

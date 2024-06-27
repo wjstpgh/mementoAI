@@ -14,3 +14,6 @@ export const getColumnsItems = (columnCount: number, itemCount: number) =>
     }),
     {} as Record<string, DragItem[]>
   );
+
+export const isEven = (item: DragItem) =>
+  parseInt(item.id.split("-")[2]) % 2 === 0;
